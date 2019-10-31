@@ -35,7 +35,7 @@ def find_nonce(start, end, difficulty):
     return (result_binary)
 
 
-start = time.time() # countdown
+start = time.time() #countdown
 if (__name__ == "__main__"):
     start_i = int(sys.argv[1])
     end_i = int(sys.argv[2])
