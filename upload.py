@@ -14,9 +14,8 @@ directory = "Documents/University/4th/Cloud\ Computing"
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
-def sendFile():
-    for dns in DNS_name:
-        os.system("scp -i ~/{}/MyFirstKey.pem ~/{}/find_nonce.py ec2-user@{}:/home/ec2-user".format(directory, directory, dns))
+def sendFile(dns):
+    os.system("scp -i ~/{}/MyFirstKey.pem ~/{}/find_nonce.py ec2-user@{}:/home/ec2-user".format(directory, directory, dns))
         # os.system("scp -i MyFirstKey.pem find_nonce.py ubuntu@ec2-{}.compute-1.amazonaws.com:~/data/".format(ip))
     
     # This is working fam.
@@ -29,14 +28,24 @@ def runInstances(i):
 def queryInstances():
     os.system("aws ec2 describe-instances --output json > instances-raw.json")
 
-def findDNS():
+def waitAndSend():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     f = open("instances.json","r")
     instances = json.load(f)
     for i in instances:
         for instance_id in i:
-            attachIAMRole(instance_id[0])
-            DNS_name.append(instance_id[5])
+            if (not(instance_id[1]['Name'] == 'terminated' or instance_id[1]['Name'] == 'shutting-down')):
+                DNS_name.append(instance_id[5])
+                wait(instance_id[0], 'eu-west-2') #wait until instance is running
+                if (instance_id[1]['Name'] == 'running'):
+                    sendFile(instance_id[5])
+                    ssh(instance_id[5])
+
+            # attachIAMRole(instance_id[0])
+            # print(instance_id)
+                # print(DNS_name.count())
+                # if (not(instance_id[1]['Name'] == 'terminated' or instance_id[1]['Name'] == 'shutting-down')):
+                # print(boto3.resource('ec2').Instance(instance_id[0]).monitor())
 
 def endInstances():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress]' --output json > instances.json")
@@ -52,28 +61,55 @@ def endInstances():
             except ClientError as e:
                 print(e)
 
+def ssh(dns):
+    os.system("ssh -i /{}/MyFirstKey.pem ec2-user@{}".format(directory, dns))
+
+def terminateInstances():
+    os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress]' --output json > instances.json")
+    #loop through and terminate all instances
+    f = open("instances.json","r")
+    instances = json.load(f)
+    for i in instances:
+        for info in i:
+            instance_id = info[0]
+            try:
+                response = ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
+                print(response)
+            except ClientError as e:
+                print(e)
+
 def attachIAMRole(instance_id):
     os.system("aws ec2 associate-iam-instance-profile --instance-id {} --iam-instance-profile Name={}".format(instance_id,iam_role_name))
 
 def wait(instance_id, region):
-    for i in range(DNS_name.count()):
-        not_initialised = False
-        while(not_initialised):
-            ec2_resource = boto3.resource('ec2', region_name=region)
-            instance = ec2_resource.Instance(instance_id)
-            if (instance.state['Name'] == 'running'):
-                not_initialised = True
-                print("Instance {} up and running".format(i))
+    print("Waiting for instance {}...".format(instance_id))
+    not_initialised = True
+    while(not_initialised):
+        ec2_resource = boto3.resource('ec2', region_name=region)
+        # ec2_resource = boto3.resource('ec2')
+        # ec2_resource.Instance(instance_id).wait_until_running()
+        instance = ec2_resource.Instance(instance_id)
+        if (instance.state['Name'] == 'running'):
+            not_initialised = False
+            print("Instance {} up and running".format(instance_id))
+        # else:
+        #     print(instance.state['Name'])
+
+def createSSMCommand():
+    os.system("aws ssm create-document --content file:///home/ec2-user/RunShellScript.json  --name `RunShellScript` --document-type `Command`")
+
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 
 
 
+terminateInstances()
+print("Instances ended.")
 # endInstances()
 runInstances(1)
-# print("Instances ran.")
-# findDNS()
-# print("DNS Found.")
+print("Instances ran.")
+# print(ec2.describe_instances())
+waitAndSend()
+print("Files Sent.")
 # sendFile()
-# print("File Sent.")
-
+# wait()
 # os.system('python find_nonce.py 0 100 3')
