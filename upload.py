@@ -5,10 +5,12 @@ import json
 
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 ec2 = boto3.client('ec2')
+client = boto3.client('ssm')
 AMI_ID = "ami-04de2b60dd25fbb2e"
 no_of_instances = 1
 DNS_name = []
 iam_role_name = "EnablesEC2ToAccessSystemsManagerRole"
+
 
 directory = "Documents/University/4th/Cloud\ Computing"
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
@@ -82,34 +84,115 @@ def attachIAMRole(instance_id):
     os.system("aws ec2 associate-iam-instance-profile --instance-id {} --iam-instance-profile Name={}".format(instance_id,iam_role_name))
 
 def wait(instance_id, region):
-    print("Waiting for instance {}...".format(instance_id))
+    print("Waiting for instance {}...".format(str(instance_id)))
+    # print(str(instance_id))
     not_initialised = True
     while(not_initialised):
         ec2_resource = boto3.resource('ec2', region_name=region)
         # ec2_resource = boto3.resource('ec2')
         # ec2_resource.Instance(instance_id).wait_until_running()
         instance = ec2_resource.Instance(instance_id)
-        if (instance.state['Name'] == 'running'):
+
+        response = ec2.describe_instance_status(
+                InstanceIds=[
+                    instance_id,
+                ],
+                DryRun=False,
+                IncludeAllInstances=True|False
+        )
+
+        if (instance.state['Name'] == 'running' and (response['InstanceStatuses'][0]["SystemStatus"]["Status"]) == "ok"):
             not_initialised = False
-            print("Instance {} up and running".format(instance_id))
+            print("Instance {} up and running!".format(instance_id))
+            print(json.dumps(response))
+            sendCommand(instance_id, "AWS-RunShellScript")
         # else:
         #     print(instance.state['Name'])
 
 def createSSMCommand():
     os.system("aws ssm create-document --content file:///home/ec2-user/RunShellScript.json  --name `RunShellScript` --document-type `Command`")
 
+
+def sendCommand(instance_id, document_name):
+    print("Running file...")
+    # os.system('aws ssm send-command --instance-ids {} --document-name {} --comment "IP config" --parameters commands=ifconfig --output text'.format(instance_id, document_name))
+    # os.system('sh_command_id=$(aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instance" --parameters commands=ls --output text --query "Command.CommandId"'.format(instance_id, document_name))
+
+    # first = "aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment"
+    # save this one lad
+    # os.system('aws ssm send-command --instance-ids {} --output text --query \'Command.CommandId\' > adam.txt'.format(instance_id))
+
+    print(type(str(instance_id)))
+
+    response = client.send_command(
+        InstanceIds=[
+            str(instance_id),
+        ],
+        DocumentName=document_name,
+        TimeoutSeconds=123,
+        Comment='Try and Run find_nonce.py',
+        Parameters={
+            'commands': [
+                'python find_nonce.py 0 10 0',
+                "print \"Hello world from python\""
+            ]
+        }
+    )
+    print(response)
+
+    # os.system('aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment \'Demo run shell script on Linux Instances\' --parameters \'{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}\' --output text --query \'Command.CommandId\''.format(instance_id))
+    # os.system('aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment \'Demo run shell script on Linux Instances\' --parameters \'{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}\' --output text --query \'Command.CommandId\''.format(instance_id))
+    # os.system('aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instances" --parameters "{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}" --output text --query "Command.CommandId"'.format(instance_id,document_name))
+    # os.system('sh_command_id=$(aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instances" --parameters "{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}" --output text --query "Command.CommandId)"')
+    # os.system('sh -c "aws ssm list-command-invocations --command-id "{}" --details --query "CommandInvocations[].CommandPlugins[].{Status:Status,Output:Output}"" > output.json')
+    # os.system("echo sh_command_id")
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 
 
+# response = ec2.describe_instance_status(
+#     InstanceIds=[
+#         'i-0992ee1f06a6ca2af',
+#     ],
+#     DryRun=False,
+#     IncludeAllInstances=True|False
+# )
 
-terminateInstances()
-print("Instances ended.")
+# print(json.dumps(response))
+
+
+
+# response = client.send_command(
+#         InstanceIds=[
+#             "",
+#         ],
+#         DocumentName='AWS-RunShellScript',
+#         TimeoutSeconds=123,
+#         Comment='Demo run shell script on Linux Instances',
+#         Parameters={
+#             'commands': [
+#                 '#!/usr/bin/python',
+#                 "print \"Hello world from python\""
+#             ]
+#         }
+#     )
+# print(response)
+
+
+response = client.list_command_invocations(
+    MaxResults=50,
+    Details=True|False
+)
+
+print(response)
+
+# terminateInstances()
+# print("Instances ended.")
 # endInstances()
-runInstances(1)
-print("Instances ran.")
+# runInstances(1)
+# print("Instances ran.")
 # print(ec2.describe_instances())
-waitAndSend()
-print("Files Sent.")
+# waitAndSend()
+# print("Files Sent.")
 # sendFile()
 # wait()
 # os.system('python find_nonce.py 0 100 3')
