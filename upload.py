@@ -141,7 +141,8 @@ def runFile(instance_id, document_name):
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                'python find_nonce.py 0 10 1'
+                "ls -a",
+                'python /home/ec2-user/find_nonce.py 0 10 1'
             ]
         }
     )
