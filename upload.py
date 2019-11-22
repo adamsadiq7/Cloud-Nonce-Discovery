@@ -141,7 +141,6 @@ def runFile(instance_id, document_name):
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                'sudo yum update',
                 'python find_nonce.py 0 10 1'
             ]
         }
@@ -159,7 +158,7 @@ def runFile(instance_id, document_name):
     )
 
     print(response_r["CommandInvocations"][0]["Status"])
-    print(response_r["CommandInvocations"[0]["CommandPlugins"[0]["Output"]]])
+    print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 
 
@@ -168,7 +167,7 @@ def runFile(instance_id, document_name):
 terminateInstances()
 print("Instances ended.")
 runInstances(1)
-print("Instances ran.")
+print("Instances queued.")
 waitAndSend()
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
 
