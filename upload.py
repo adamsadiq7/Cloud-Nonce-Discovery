@@ -2,6 +2,7 @@ import boto3
 from botocore.exceptions import ClientError
 import os
 import json
+import time
 
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 ec2 = boto3.client('ec2')
@@ -17,7 +18,8 @@ directory = "Documents/University/4th/Cloud\ Computing"
 
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 def sendFile(dns):
-    os.system("scp -i ~/{}/MyFirstKey.pem ~/{}/find_nonce.py ec2-user@{}:/home/ec2-user".format(directory, directory, dns))
+    os.system("scp -i ~/{}/MyFirstKey.pem ~/{}/find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
+    # os.system("yes")
         # os.system("scp -i MyFirstKey.pem find_nonce.py ubuntu@ec2-{}.compute-1.amazonaws.com:~/data/".format(ip))
     
     # This is working fam.
@@ -34,20 +36,27 @@ def waitAndSend():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     f = open("instances.json","r")
     instances = json.load(f)
+
+
     for i in instances:
         for instance_id in i:
-            if (not(instance_id[1]['Name'] == 'terminated' or instance_id[1]['Name'] == 'shutting-down')):
-                DNS_name.append(instance_id[5])
-                wait(instance_id[0], 'eu-west-2') #wait until instance is running
-                if (instance_id[1]['Name'] == 'running'):
-                    sendFile(instance_id[5])
-                    ssh(instance_id[5])
 
-            # attachIAMRole(instance_id[0])
+            instance = instance_id[0]
+            dns = instance_id[5]
+            state = instance_id[1]
+
+            if (not(state['Name'] == 'terminated' or state['Name'] == 'shutting-down')):
+                DNS_name.append(dns)
+                wait(instance, 'eu-west-2') #wait until instance is running
+                sendFile(dns) #this takes dns
+                print("Files Sent.")
+                runFile(instance, "AWS-RunShellScript")
+
+            # attachIAMRole(instance)
             # print(instance_id)
                 # print(DNS_name.count())
-                # if (not(instance_id[1]['Name'] == 'terminated' or instance_id[1]['Name'] == 'shutting-down')):
-                # print(boto3.resource('ec2').Instance(instance_id[0]).monitor())
+                # if (not(state['Name'] == 'terminated' or state['Name'] == 'shutting-down')):
+                # print(boto3.resource('ec2').Instance(instance).monitor())
 
 def endInstances():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress]' --output json > instances.json")
@@ -64,7 +73,7 @@ def endInstances():
                 print(e)
 
 def ssh(dns):
-    os.system("ssh -i /{}/MyFirstKey.pem ec2-user@{}".format(directory, dns))
+    os.system("ssh -i /{}/MyFirstKey.pem ec2-user@{}:~".format(directory, dns))
 
 def terminateInstances():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress]' --output json > instances.json")
@@ -101,11 +110,10 @@ def wait(instance_id, region):
                 IncludeAllInstances=True|False
         )
 
-        if (instance.state['Name'] == 'running' and (response['InstanceStatuses'][0]["SystemStatus"]["Status"]) == "ok"):
+        if (instance.state['Name'] == 'running' and ((response['InstanceStatuses'][0]["SystemStatus"]["Status"]) == "ok") and (response['InstanceStatuses'][0]["InstanceStatus"]["Status"] == "ok")):
             not_initialised = False
             print("Instance {} up and running!".format(instance_id))
             print(json.dumps(response))
-            sendCommand(instance_id, "AWS-RunShellScript")
         # else:
         #     print(instance.state['Name'])
 
@@ -113,7 +121,7 @@ def createSSMCommand():
     os.system("aws ssm create-document --content file:///home/ec2-user/RunShellScript.json  --name `RunShellScript` --document-type `Command`")
 
 
-def sendCommand(instance_id, document_name):
+def runFile(instance_id, document_name):
     print("Running file...")
     # os.system('aws ssm send-command --instance-ids {} --document-name {} --comment "IP config" --parameters commands=ifconfig --output text'.format(instance_id, document_name))
     # os.system('sh_command_id=$(aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instance" --parameters commands=ls --output text --query "Command.CommandId"'.format(instance_id, document_name))
@@ -133,12 +141,54 @@ def sendCommand(instance_id, document_name):
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                'python find_nonce.py 0 10 0',
-                "print \"Hello world from python\""
+                'sudo yum update',
+                'python find_nonce.py 0 10 1'
             ]
         }
     )
+
     print(response)
+    commandId = response["Command"]["CommandId"]
+    time.sleep(20)
+
+    response_r = client.list_command_invocations(
+        CommandId=commandId,
+        InstanceId=instance_id,
+        MaxResults=50,
+        Details=True | False
+    )
+
+    print(response_r["CommandInvocations"][0]["Status"])
+    print(response_r["CommandInvocations"[0]["CommandPlugins"[0]["Output"]]])
+# ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
+
+
+
+# ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
+terminateInstances()
+print("Instances ended.")
+runInstances(1)
+print("Instances ran.")
+waitAndSend()
+# ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------- OTHERS ------------------------------------------------------------- #
+
+# # endInstances()
+# # print(ec2.describe_instances())
+# sendFile()
+# wait()
+# os.system('python find_nonce.py 0 100 3')
+
+# time.sleep(20)
+
 
     # os.system('aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment \'Demo run shell script on Linux Instances\' --parameters \'{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}\' --output text --query \'Command.CommandId\''.format(instance_id))
     # os.system('aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment \'Demo run shell script on Linux Instances\' --parameters \'{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}\' --output text --query \'Command.CommandId\''.format(instance_id))
@@ -146,19 +196,6 @@ def sendCommand(instance_id, document_name):
     # os.system('sh_command_id=$(aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instances" --parameters "{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}" --output text --query "Command.CommandId)"')
     # os.system('sh -c "aws ssm list-command-invocations --command-id "{}" --details --query "CommandInvocations[].CommandPlugins[].{Status:Status,Output:Output}"" > output.json')
     # os.system("echo sh_command_id")
-# ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
-
-
-# response = ec2.describe_instance_status(
-#     InstanceIds=[
-#         'i-0992ee1f06a6ca2af',
-#     ],
-#     DryRun=False,
-#     IncludeAllInstances=True|False
-# )
-
-# print(json.dumps(response))
-
 
 
 # response = client.send_command(
@@ -178,21 +215,6 @@ def sendCommand(instance_id, document_name):
 # print(response)
 
 
-response = client.list_command_invocations(
-    MaxResults=50,
-    Details=True|False
-)
+# scp -i MyFirstKey.pem find_nonce.py ec2-user@ec2-18-130-108-80.eu-west-2.compute.amazonaws.com:~/ 
 
-print(response)
-
-# terminateInstances()
-# print("Instances ended.")
-# endInstances()
-# runInstances(1)
-# print("Instances ran.")
-# print(ec2.describe_instances())
-# waitAndSend()
-# print("Files Sent.")
-# sendFile()
-# wait()
-# os.system('python find_nonce.py 0 100 3')
+# ------------------------------------------------------------- OTHERS ------------------------------------------------------------- #
