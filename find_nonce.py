@@ -1,6 +1,7 @@
 import hashlib
 import time
 import sys
+import os
 
 # -------------------------------------------------------- GLOBAL VARIABLES -------------------------------------------------------- #
 challenger_string = "COMSM0010cloud"
@@ -31,16 +32,18 @@ def find_nonce(start, end, difficulty):
             j += 1
 
 
-start = time.time() #countdown
 if (__name__ == "__main__"):
+    start = time.time() #countdown
     start_i = int(sys.argv[1])
     end_i = int(sys.argv[2])
     difficulty = int(sys.argv[3])
+    instance_id = str(sys.argv[4])
     time = str(time.time() - start) + "s"
     result = find_nonce(start_i, end_i, difficulty)
     if (result == None):
         print("No nonce found")
     else:
         print(time)
+        os.system('python home/ec2-user/stop.py {}'.format(instance_id))
 else:
     print("Program ran with no arguments!")

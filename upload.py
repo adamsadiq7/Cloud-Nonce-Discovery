@@ -18,7 +18,8 @@ directory = "Documents/University/4th/Cloud\ Computing"
 
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 def sendFile(dns):
-    os.system("scp -i ~/{}/MyFirstKey.pem ~/{}/find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
+    os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
+    os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/stop.py ec2-user@{}:~".format(directory, directory, dns))
     # os.system("yes")
         # os.system("scp -i MyFirstKey.pem find_nonce.py ubuntu@ec2-{}.compute-1.amazonaws.com:~/data/".format(ip))
     
@@ -130,8 +131,6 @@ def runFile(instance_id, document_name):
     # save this one lad
     # os.system('aws ssm send-command --instance-ids {} --output text --query \'Command.CommandId\' > adam.txt'.format(instance_id))
 
-    print(type(str(instance_id)))
-
     response = client.send_command(
         InstanceIds=[
             str(instance_id),
@@ -141,15 +140,15 @@ def runFile(instance_id, document_name):
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                "ls -a",
-                'python /home/ec2-user/find_nonce.py 0 10 1'
+                # 'pip install boto3',
+                'python /home/ec2-user/find_nonce.py 0 10 1 {}'.format(instance_id)
             ]
         }
     )
 
-    print(response)
     commandId = response["Command"]["CommandId"]
-    time.sleep(20)
+
+    time.sleep(30)
 
     response_r = client.list_command_invocations(
         CommandId=commandId,
