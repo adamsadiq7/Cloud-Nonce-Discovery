@@ -19,7 +19,7 @@ directory = "Documents/University/4th/Cloud\ Computing"
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 def sendFile(dns):
     os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
-    os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/stop.py ec2-user@{}:~".format(directory, directory, dns))
+    
     # os.system("yes")
         # os.system("scp -i MyFirstKey.pem find_nonce.py ubuntu@ec2-{}.compute-1.amazonaws.com:~/data/".format(ip))
     
@@ -85,10 +85,11 @@ def terminateInstances():
         for info in i:
             instance_id = info[0]
             try:
-                response = ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
-                print(response)
+                ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
             except ClientError as e:
                 print(e)
+    os.system("rm instances.json")
+    print("Instances terminated")
 
 def attachIAMRole(instance_id):
     os.system("aws ec2 associate-iam-instance-profile --instance-id {} --iam-instance-profile Name={}".format(instance_id,iam_role_name))
@@ -114,7 +115,7 @@ def wait(instance_id, region):
         if (instance.state['Name'] == 'running' and ((response['InstanceStatuses'][0]["SystemStatus"]["Status"]) == "ok") and (response['InstanceStatuses'][0]["InstanceStatus"]["Status"] == "ok")):
             not_initialised = False
             print("Instance {} up and running!".format(instance_id))
-            print(json.dumps(response))
+            # print(json.dumps(response))
         # else:
         #     print(instance.state['Name'])
 
@@ -140,41 +141,67 @@ def runFile(instance_id, document_name):
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                # 'pip install boto3',
-                'python /home/ec2-user/find_nonce.py 0 10 1 {}'.format(instance_id)
+                'python /home/ec2-user/find_nonce.py {} {} {}'.format(0, 10000000, 20)
             ]
         }
     )
 
-    commandId = response["Command"]["CommandId"]
+    # commandId = response["Command"]["CommandId"]
 
-    time.sleep(30)
 
-    response_r = client.list_command_invocations(
-        CommandId=commandId,
-        InstanceId=instance_id,
-        MaxResults=50,
-        Details=True | False
-    )
+def checkResults():
+    f = open("instances.json","r")
+    instances = json.load(f)
 
-    print(response_r["CommandInvocations"][0]["Status"])
-    print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
+    ec2Finished = False
+
+    while not ec2Finished:
+
+        for i in instances:
+            for instance_id in i:
+
+                instance = instance_id[0]
+                state = instance_id[1]
+
+                if (not(state['Name'] == 'terminated' or state['Name'] == 'shutting-down')):
+
+                    response_r = client.list_command_invocations(
+                        InstanceId=instance,
+                        MaxResults=50,
+                        Details=True
+                    )
+
+                    # print(response_r)
+
+                    commandInvocations = response_r["CommandInvocations"]
+                    
+                    if (commandInvocations):
+                        resp = commandInvocations[0]["Status"]
+                        if (resp == "Success"):
+                            terminateInstances()
+                            ec2Finished = True
+                            print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
+                            break
+                            print("Instance {} finished first".format(instance))
+                        elif(resp == "Failed"):
+                            print("Command Failed")
+
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 
 
 
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
 terminateInstances()
-print("Instances ended.")
-runInstances(1)
+runInstances(10)
 print("Instances queued.")
 waitAndSend()
+checkResults()
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
 
 
 
 
-
+# YOUR CODE IS SO BROKEN AND YOU DON'T EVEN KNOW IT
 
 
 
