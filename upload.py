@@ -3,6 +3,7 @@ from botocore.exceptions import ClientError
 import os
 import json
 import time
+import sys
 
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 ec2 = boto3.client('ec2')
@@ -27,17 +28,17 @@ def sendFile(dns):
         # os.system("scp -i ~/Documents/University/4th/Cloud\ Computing/MyFirstKey.pem ~/Documents/University/4th/Cloud\ Computing/find_nonce.py ec2-user@ec2-3-10-169-78.eu-west-2.compute.amazonaws.com:/home/ec2-user")
 
 def runInstances(i):
-    os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" > output_run.json'.format(iam_role_name, i))
+    os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup"'.format(iam_role_name, i))
     # os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" --user-data://job.sh > output_run.json'.format(i))
 
 def queryInstances():
     os.system("aws ec2 describe-instances --output json > instances-raw.json")
 
-def waitAndSend():
+def waitAndSend(time_limit, difficulty):
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     f = open("instances.json","r")
     instances = json.load(f)
-
+    iterator = 0
 
     for i in instances:
         for instance_id in i:
@@ -51,7 +52,8 @@ def waitAndSend():
                 wait(instance, 'eu-west-2') #wait until instance is running
                 sendFile(dns) #this takes dns
                 print("Files Sent.")
-                runFile(instance, "AWS-RunShellScript")
+                runFile(instance, "AWS-RunShellScript", time_limit, difficulty, iterator)
+                iterator +=1
 
             # attachIAMRole(instance)
             # print(instance_id)
@@ -109,12 +111,13 @@ def wait(instance_id, region):
                     instance_id,
                 ],
                 DryRun=False,
-                IncludeAllInstances=True|False
+                IncludeAllInstances=True
         )
 
         if (instance.state['Name'] == 'running' and ((response['InstanceStatuses'][0]["SystemStatus"]["Status"]) == "ok") and (response['InstanceStatuses'][0]["InstanceStatus"]["Status"] == "ok")):
             not_initialised = False
             print("Instance {} up and running!".format(instance_id))
+            break
             # print(json.dumps(response))
         # else:
         #     print(instance.state['Name'])
@@ -122,9 +125,12 @@ def wait(instance_id, region):
 def createSSMCommand():
     os.system("aws ssm create-document --content file:///home/ec2-user/RunShellScript.json  --name `RunShellScript` --document-type `Command`")
 
+def authoriseSecurityGroup(sg, port, ip):
+    port = 22
+    os.system("aws ec2 authorize-security-group-ingress --group-id {} --protocol tcp --port {} --cidr {}",format(sg,port, ip))
 
-def runFile(instance_id, document_name):
-    print("Running file...")
+
+def runFile(instance_id, document_name, time_limit, difficulty, instance_number):
     # os.system('aws ssm send-command --instance-ids {} --document-name {} --comment "IP config" --parameters commands=ifconfig --output text'.format(instance_id, document_name))
     # os.system('sh_command_id=$(aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instance" --parameters commands=ls --output text --query "Command.CommandId"'.format(instance_id, document_name))
 
@@ -132,7 +138,15 @@ def runFile(instance_id, document_name):
     # save this one lad
     # os.system('aws ssm send-command --instance-ids {} --output text --query \'Command.CommandId\' > adam.txt'.format(instance_id))
 
-    response = client.send_command(
+    instructionsPerS = 187248
+    ec2_range = instructionsPerS * time_limit
+
+    start = instance_number * ec2_range
+    end = (instance_number + 1) * ec2_range
+
+    print("Instance {} running...".format(instance_id))
+
+    client.send_command(
         InstanceIds=[
             str(instance_id),
         ],
@@ -141,7 +155,7 @@ def runFile(instance_id, document_name):
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                'python /home/ec2-user/find_nonce.py {} {} {}'.format(0, 10000000, 20)
+                'python /home/ec2-user/find_nonce.py {} {} {} {}'.format(start, end, difficulty, time_limit)
             ]
         }
     )
@@ -149,12 +163,15 @@ def runFile(instance_id, document_name):
     # commandId = response["Command"]["CommandId"]
 
 
-def checkResults():
+def checkResults(totalVMS):
+    print("Checking results")
+    os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     f = open("instances.json","r")
     instances = json.load(f)
 
     ec2Finished = False
 
+    terminatedVMS = 0
     while not ec2Finished:
 
         for i in instances:
@@ -163,57 +180,93 @@ def checkResults():
                 instance = instance_id[0]
                 state = instance_id[1]
 
-                if (not(state['Name'] == 'terminated' or state['Name'] == 'shutting-down')):
-
+                if (state['Name'] == 'running'):
+                    # print("{} is running".format(instance_id[0]))
                     response_r = client.list_command_invocations(
                         InstanceId=instance,
                         MaxResults=50,
                         Details=True
                     )
+                    time.sleep(1)
 
-                    # print(response_r)
 
                     commandInvocations = response_r["CommandInvocations"]
                     
                     if (commandInvocations):
+                        # print(commandInvocations[0]["Status"])
+                        output = response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]
                         resp = commandInvocations[0]["Status"]
                         if (resp == "Success"):
-                            terminateInstances()
-                            ec2Finished = True
-                            print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
-                            break
-                            print("Instance {} finished first".format(instance))
+                            
+                            #if one VM has finished and found none, terminate run other VM's
+                            if (output[:14] == "No nonce found" and (terminatedVMS <= totalVMS)):
+                                print("VM {} did not find a nonce")
+                                terminateVM(instance_id[0])
+                                terminatedVMS+=1
+                                if (terminatedVMS == totalVMS):
+                                    ec2Finished = True
+                            #we found a nonce
+                            elif(output[:11] == "Nonce found"):
+                                terminateInstances() #terminate all instances
+                                terminatedVMS = totalVMS
+                                ec2Finished = True
+                                print("Instance {} found nonce first".format(instance))
+                                print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]) #Output
+                                break
+                        # If the command failed
                         elif(resp == "Failed"):
                             print("Command Failed")
+                            print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
+                            terminatedVMS +=1
+                            if (terminatedVMS == totalVMS): 
+                                ec2Finished = True #if this is the last VM, exit the loop
+                            terminateVM(instance_id[0]) #Terminate the VM
+                            break
+                # else:
+                #     print("{} is {}".format(instance_id[0], state['Name']))
 
+def terminateVM(instance_id):
+    ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
+    print("Instance {} terminated.".format(instance_id))
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 
 
 
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
-terminateInstances()
-runInstances(10)
-print("Instances queued.")
-waitAndSend()
-checkResults()
+if (__name__ == "__main__"):
+    start = time.time() #countdown
+    time_limit = int(sys.argv[1]) * 60
+    difficulty = int(sys.argv[2])
+
+    terminateInstances()
+    runInstances(1)
+    totalVMS = 1
+    print("Instances queued.")
+    waitAndSend(time_limit, difficulty)
+    checkResults(totalVMS)
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
 
 
 
 
-# YOUR CODE IS SO BROKEN AND YOU DON'T EVEN KNOW IT
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 # ------------------------------------------------------------- OTHERS ------------------------------------------------------------- #
 
-# # endInstances()
 # # print(ec2.describe_instances())
 # sendFile()
-# wait()
-# os.system('python find_nonce.py 0 100 3')
-
-# time.sleep(20)
 
 
     # os.system('aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment \'Demo run shell script on Linux Instances\' --parameters \'{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}\' --output text --query \'Command.CommandId\''.format(instance_id))
