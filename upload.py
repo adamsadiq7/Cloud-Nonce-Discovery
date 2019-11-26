@@ -7,6 +7,7 @@ import sys
 
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 ec2 = boto3.client('ec2')
+ec2_resource = boto3.resource('ec2')
 client = boto3.client('ssm')
 AMI_ID = "ami-04de2b60dd25fbb2e"
 no_of_instances = 1
@@ -90,7 +91,7 @@ def terminateInstances():
                 ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
             except ClientError as e:
                 print(e)
-    os.system("rm instances.json")
+    updateInstances()
     print("Instances terminated")
 
 def attachIAMRole(instance_id):
@@ -144,14 +145,15 @@ def runFile(instance_id, document_name, time_limit, difficulty, instance_number)
     start = instance_number * ec2_range
     end = (instance_number + 1) * ec2_range
 
-    print("Instance {} running...".format(instance_id))
+    print("Running instance {} with... start {}, end {}, diff {}, time {}".format(instance_id, start, end, difficulty, time_limit))
+
 
     client.send_command(
         InstanceIds=[
             str(instance_id),
         ],
         DocumentName=document_name,
-        TimeoutSeconds=123,
+        TimeoutSeconds=600,
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
@@ -164,8 +166,8 @@ def runFile(instance_id, document_name, time_limit, difficulty, instance_number)
 
 
 def checkResults(totalVMS):
-    print("Checking results")
-    os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
+    print("Checking results...")
+    updateInstances()
     f = open("instances.json","r")
     instances = json.load(f)
 
@@ -181,7 +183,7 @@ def checkResults(totalVMS):
                 state = instance_id[1]
 
                 if (state['Name'] == 'running'):
-                    # print("{} is running".format(instance_id[0]))
+
                     response_r = client.list_command_invocations(
                         InstanceId=instance,
                         MaxResults=50,
@@ -193,14 +195,14 @@ def checkResults(totalVMS):
                     commandInvocations = response_r["CommandInvocations"]
                     
                     if (commandInvocations):
-                        # print(commandInvocations[0]["Status"])
+                        print(commandInvocations[0]["Status"])
                         output = response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]
                         resp = commandInvocations[0]["Status"]
                         if (resp == "Success"):
                             
                             #if one VM has finished and found none, terminate run other VM's
                             if (output[:14] == "No nonce found" and (terminatedVMS <= totalVMS)):
-                                print("VM {} did not find a nonce")
+                                print("VM {} did not find a nonce".format(instance_id[0]))
                                 terminateVM(instance_id[0])
                                 terminatedVMS+=1
                                 if (terminatedVMS == totalVMS):
@@ -222,12 +224,45 @@ def checkResults(totalVMS):
                                 ec2Finished = True #if this is the last VM, exit the loop
                             terminateVM(instance_id[0]) #Terminate the VM
                             break
-                # else:
-                #     print("{} is {}".format(instance_id[0], state['Name']))
+                        else:
+                            print(resp)
+                else:
+                    print("{} is {}".format(instance_id[0], state['Name']))
 
 def terminateVM(instance_id):
     ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
+    updateInstances()
     print("Instance {} terminated.".format(instance_id))
+
+def updateInstances():
+    instances = ec2_resource.instances.filter(
+        Filters=[{'Name': 'instance-state-name', "Values":['pending', 'running']}]
+    )
+
+    print(instances)
+
+    # os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
+    # instances  = json.load(open("instances.json"))
+    # index = 0
+    # for i in instances:
+        # j = i[0]
+        # print(j)
+        # if not(j[5]):
+            # print(instances[index])
+            # instances.pop(index)
+            # index+=1
+        # else:
+            # print("hi")
+            # print(instances[index])
+            # print("hi")
+            # index = 0
+
+    # print(instances)
+
+    # with open('instances.json', 'w') as outfile:
+        # json.dump(instances, outfile)
+
+
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 
 
@@ -238,62 +273,11 @@ if (__name__ == "__main__"):
     time_limit = int(sys.argv[1]) * 60
     difficulty = int(sys.argv[2])
 
-    terminateInstances()
     runInstances(1)
-    totalVMS = 1
-    print("Instances queued.")
-    waitAndSend(time_limit, difficulty)
-    checkResults(totalVMS)
+    updateInstances()
+    # terminateInstances()
+    # totalVMS = 1
+    # print("Instances queued.")
+    # waitAndSend(time_limit, difficulty)
+    # checkResults(totalVMS)
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ------------------------------------------------------------- OTHERS ------------------------------------------------------------- #
-
-# # print(ec2.describe_instances())
-# sendFile()
-
-
-    # os.system('aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment \'Demo run shell script on Linux Instances\' --parameters \'{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}\' --output text --query \'Command.CommandId\''.format(instance_id))
-    # os.system('aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment \'Demo run shell script on Linux Instances\' --parameters \'{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}\' --output text --query \'Command.CommandId\''.format(instance_id))
-    # os.system('aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instances" --parameters "{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}" --output text --query "Command.CommandId"'.format(instance_id,document_name))
-    # os.system('sh_command_id=$(aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instances" --parameters "{"commands":["#!/usr/bin/python","print \"Hello world from python\""]}" --output text --query "Command.CommandId)"')
-    # os.system('sh -c "aws ssm list-command-invocations --command-id "{}" --details --query "CommandInvocations[].CommandPlugins[].{Status:Status,Output:Output}"" > output.json')
-    # os.system("echo sh_command_id")
-
-
-# response = client.send_command(
-#         InstanceIds=[
-#             "",
-#         ],
-#         DocumentName='AWS-RunShellScript',
-#         TimeoutSeconds=123,
-#         Comment='Demo run shell script on Linux Instances',
-#         Parameters={
-#             'commands': [
-#                 '#!/usr/bin/python',
-#                 "print \"Hello world from python\""
-#             ]
-#         }
-#     )
-# print(response)
-
-
-# scp -i MyFirstKey.pem find_nonce.py ec2-user@ec2-18-130-108-80.eu-west-2.compute.amazonaws.com:~/ 
-
-# ------------------------------------------------------------- OTHERS ------------------------------------------------------------- #
