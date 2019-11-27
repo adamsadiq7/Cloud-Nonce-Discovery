@@ -21,6 +21,7 @@ directory = "Documents/University/4th/Cloud\ Computing"
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 def sendFile(dns):
     os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
+    os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/test.py ec2-user@{}:~".format(directory, directory, dns))
     
     # os.system("yes")
         # os.system("scp -i MyFirstKey.pem find_nonce.py ubuntu@ec2-{}.compute-1.amazonaws.com:~/data/".format(ip))
@@ -29,7 +30,7 @@ def sendFile(dns):
         # os.system("scp -i ~/Documents/University/4th/Cloud\ Computing/MyFirstKey.pem ~/Documents/University/4th/Cloud\ Computing/find_nonce.py ec2-user@ec2-3-10-169-78.eu-west-2.compute.amazonaws.com:/home/ec2-user")
 
 def runInstances(i):
-    os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" > hello.json'.format(iam_role_name, i))
+    os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" > stop-output.json'.format(iam_role_name, i))
     # os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" --user-data://job.sh > output_run.json'.format(i))
 
 def queryInstances():
@@ -55,12 +56,6 @@ def waitAndSend(time_limit, difficulty):
                 print("Files Sent.")
                 runFile(instance, "AWS-RunShellScript", time_limit, difficulty, iterator)
                 iterator +=1
-
-            # attachIAMRole(instance)
-            # print(instance_id)
-                # print(DNS_name.count())
-                # if (not(state['Name'] == 'terminated' or state['Name'] == 'shutting-down')):
-                # print(boto3.resource('ec2').Instance(instance).monitor())
 
 def endInstances():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress]' --output json > instances.json")
@@ -153,11 +148,11 @@ def runFile(instance_id, document_name, time_limit, difficulty, instance_number)
             str(instance_id),
         ],
         DocumentName=document_name,
-        TimeoutSeconds=600,
+        TimeoutSeconds=60000,
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                'python /home/ec2-user/find_nonce.py {} {} {} {}'.format(start, end, difficulty, time_limit)
+                'python /home/ec2-user/find_nonce.py {} {} {}'.format(instance_number, difficulty, time_limit)
             ]
         }
     )
@@ -166,7 +161,7 @@ def runFile(instance_id, document_name, time_limit, difficulty, instance_number)
 
 
 def checkResults(totalVMS):
-    print("Checking results...")
+    print("Waiting for results...")
 
     ec2Finished = False
 
@@ -178,7 +173,6 @@ def checkResults(totalVMS):
             instance = str(instance.id)
             response_r = client.list_command_invocations(
                 InstanceId=instance,
-                MaxResults=50,
                 Details=True
             )
             time.sleep(15)
@@ -215,8 +209,13 @@ def checkResults(totalVMS):
                         ec2Finished = True #if this is the last VM, exit the loop
                     terminateVM(instance) #Terminate the VM
                     break
-                else:
-                    print(resp)
+                elif (resp == "TimedOut"):
+                    print(output)
+                    terminatedVMS+=1
+                    if (terminatedVMS == totalVMS): 
+                        ec2Finished = True #if this is the last VM, exit the loop
+                    terminateVM(instance) #Terminate the VM
+                    break
 
 def terminateVM(instance_id):
     ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
