@@ -29,7 +29,7 @@ def sendFile(dns):
         # os.system("scp -i ~/Documents/University/4th/Cloud\ Computing/MyFirstKey.pem ~/Documents/University/4th/Cloud\ Computing/find_nonce.py ec2-user@ec2-3-10-169-78.eu-west-2.compute.amazonaws.com:/home/ec2-user")
 
 def runInstances(i):
-    os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup"'.format(iam_role_name, i))
+    os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" > hello.json'.format(iam_role_name, i))
     # os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" --user-data://job.sh > output_run.json'.format(i))
 
 def queryInstances():
@@ -145,7 +145,7 @@ def runFile(instance_id, document_name, time_limit, difficulty, instance_number)
     start = instance_number * ec2_range
     end = (instance_number + 1) * ec2_range
 
-    print("Running instance {} with... start {}, end {}, diff {}, time {}".format(instance_id, start, end, difficulty, time_limit))
+    print("Running instance {} with start {}, end {}, diff {}, time {}".format(instance_id, start, end, difficulty, time_limit))
 
 
     client.send_command(
@@ -167,67 +167,56 @@ def runFile(instance_id, document_name, time_limit, difficulty, instance_number)
 
 def checkResults(totalVMS):
     print("Checking results...")
-    updateInstances()
-    f = open("instances.json","r")
-    instances = json.load(f)
 
     ec2Finished = False
 
     terminatedVMS = 0
     while not ec2Finished:
 
-        for i in instances:
-            for instance_id in i:
+        instances = ec2_resource.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
+        for instance in instances:
+            instance = str(instance.id)
+            response_r = client.list_command_invocations(
+                InstanceId=instance,
+                MaxResults=50,
+                Details=True
+            )
+            time.sleep(15)
 
-                instance = instance_id[0]
-                state = instance_id[1]
-
-                if (state['Name'] == 'running'):
-
-                    response_r = client.list_command_invocations(
-                        InstanceId=instance,
-                        MaxResults=50,
-                        Details=True
-                    )
-                    time.sleep(1)
-
-
-                    commandInvocations = response_r["CommandInvocations"]
+            commandInvocations = response_r["CommandInvocations"]
+            
+            if (commandInvocations):
+                print(commandInvocations[0]["Status"])
+                output = response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]
+                resp = commandInvocations[0]["Status"]
+                if (resp == "Success"):
                     
-                    if (commandInvocations):
-                        print(commandInvocations[0]["Status"])
-                        output = response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]
-                        resp = commandInvocations[0]["Status"]
-                        if (resp == "Success"):
-                            
-                            #if one VM has finished and found none, terminate run other VM's
-                            if (output[:14] == "No nonce found" and (terminatedVMS <= totalVMS)):
-                                print("VM {} did not find a nonce".format(instance_id[0]))
-                                terminateVM(instance_id[0])
-                                terminatedVMS+=1
-                                if (terminatedVMS == totalVMS):
-                                    ec2Finished = True
-                            #we found a nonce
-                            elif(output[:11] == "Nonce found"):
-                                terminateInstances() #terminate all instances
-                                terminatedVMS = totalVMS
-                                ec2Finished = True
-                                print("Instance {} found nonce first".format(instance))
-                                print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]) #Output
-                                break
-                        # If the command failed
-                        elif(resp == "Failed"):
-                            print("Command Failed")
-                            print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
-                            terminatedVMS +=1
-                            if (terminatedVMS == totalVMS): 
-                                ec2Finished = True #if this is the last VM, exit the loop
-                            terminateVM(instance_id[0]) #Terminate the VM
-                            break
-                        else:
-                            print(resp)
+                    #if one VM has finished and found none, terminate and continue others
+                    if (output[:14] == "No nonce found" and (terminatedVMS <= totalVMS)):
+                        print("VM {} did not find a nonce".format(instance))
+                        terminateVM(instance)
+                        terminatedVMS+=1
+                        if (terminatedVMS == totalVMS):
+                            ec2Finished = True
+                    #we found a nonce
+                    elif(output[:11] == "Nonce found"):
+                        terminateInstances() #terminate all instances
+                        terminatedVMS = totalVMS
+                        ec2Finished = True
+                        print("Instance {} found nonce first".format(instance))
+                        print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]) #Output
+                        break
+                # If the command failed
+                elif(resp == "Failed"):
+                    print("Command Failed")
+                    print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
+                    terminatedVMS +=1
+                    if (terminatedVMS == totalVMS): 
+                        ec2Finished = True #if this is the last VM, exit the loop
+                    terminateVM(instance) #Terminate the VM
+                    break
                 else:
-                    print("{} is {}".format(instance_id[0], state['Name']))
+                    print(resp)
 
 def terminateVM(instance_id):
     ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
@@ -235,11 +224,11 @@ def terminateVM(instance_id):
     print("Instance {} terminated.".format(instance_id))
 
 def updateInstances():
-    instances = ec2_resource.instances.filter(
-        Filters=[{'Name': 'instance-state-name', "Values":['pending', 'running']}]
-    )
+    os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
+    # instances = ec2_resource.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
+    
 
-    print(instances)
+    # print(instances)
 
     # os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     # instances  = json.load(open("instances.json"))
@@ -273,11 +262,10 @@ if (__name__ == "__main__"):
     time_limit = int(sys.argv[1]) * 60
     difficulty = int(sys.argv[2])
 
-    runInstances(1)
-    updateInstances()
-    # terminateInstances()
-    # totalVMS = 1
-    # print("Instances queued.")
-    # waitAndSend(time_limit, difficulty)
-    # checkResults(totalVMS)
+    terminateInstances()
+    runInstances(10)
+    totalVMS = 10
+    print("Instances queued.")
+    waitAndSend(time_limit, difficulty)
+    checkResults(totalVMS)
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #
