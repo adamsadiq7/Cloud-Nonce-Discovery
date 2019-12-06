@@ -55,13 +55,11 @@ parser.add_argument(
     type=float,
     help="Confidence value",
 )
-
-directory = "Documents/University/4th/Cloud\ Computing"
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 def sendFile(dns):
-    os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/brute_find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
+    os.system("scp -i MyFirstKey.pem -o 'StrictHostKeyChecking no' brute_find_nonce.py ec2-user@{}:~".format(dns))
     
 def runInstances(i):
     os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" > stop-output.json'.format(iam_role_name, i))
@@ -105,7 +103,7 @@ def endInstances():
                 print(e)
 
 def ssh(dns):
-    os.system("ssh -i /{}/MyFirstKey.pem ec2-user@{}:~".format(directory, dns))
+    os.system("ssh -i MyFirstKey.pem ec2-user@{}:~".format(dns))
 
 def emergencyStop(signum, frame):
     print("Emergency stop")
