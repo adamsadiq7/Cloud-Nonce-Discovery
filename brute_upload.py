@@ -374,7 +374,7 @@ if (__name__ == "__main__"):
 
     signal.signal(signal.SIGINT, emergencyStop)
 
-    y_intercept = -8.5
+    y_intercept = -19
 
     exp_time = 2**(difficulty + y_intercept)
 
@@ -385,30 +385,34 @@ if (__name__ == "__main__"):
     index = 1
     foundVM = False
 
-    with open('times.csv', 'r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        for row in csv_reader:
-            if (not("difficulty" == row[0])):
-                if (int(row[0]) == difficulty):
-                    for item in row:
-                        if (item[-2:] == "ms"):
-                            rec_time = int(item[:len(item)-2])
-                            if (max_time >= rec_time):
-                                foundVM = True
-                                VMS = index
-                                break
-                            else:
-                                if(index == 1):
-                                    index = 0
-                                    index += 2
+    # with open('times.csv', 'r') as csv_file:
+    #     csv_reader = csv.reader(csv_file)
+    #     for row in csv_reader:
+    #         if (not("difficulty" == row[0])):
+    #             if (int(row[0]) == difficulty):
+    #                 for item in row:
+    #                     if (item[-2:] == "ms"):
+    #                         rec_time = int(item[:len(item)-2])
+    #                         if (max_time >= rec_time):
+    #                             foundVM = True
+    #                             VMS = index
+    #                             break
+    #                         else:
+    #                             if(index == 1):
+    #                                 index = 0
+    #                                 index += 2
 
     if (foundVM == False):
         VMS = 15
 
-    # if (args.vms):
-    #     VMS = args.vms
+    VMS = math.ceil(max_time / time_limit)
 
-    print(time_limit, difficulty, confidence, VMS, logging)
+    if (args.vms):
+        if (args.vms > 1):
+            VMS = args.vms
+
+    VMS = int(VMS)
+    print(max_time, time_limit, difficulty, confidence, VMS, logging)
 
     terminateInstances()
     runInstances(VMS)
