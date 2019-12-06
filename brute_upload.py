@@ -67,7 +67,7 @@ def runInstances(i):
 def queryInstances():
     os.system("aws ec2 describe-instances --output json > instances-raw.json")
 
-def waitAndSend(difficulty, VMS, logging):
+def waitAndSend(difficulty, VMS, time_limit, logging):
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     f = open("instances.json","r")
     instances = json.load(f)
@@ -85,7 +85,7 @@ def waitAndSend(difficulty, VMS, logging):
                 wait(instance, 'eu-west-2') #wait until instance is running
                 sendFile(dns) #this takes dns
                 print("Files Sent.")
-                runFile(instance, "AWS-RunShellScript", difficulty, iterator, VMS, logging)
+                runFile(instance, "AWS-RunShellScript", difficulty, time_limit, iterator, VMS, logging)
                 iterator +=1
 
 def endInstances():
@@ -222,7 +222,7 @@ def authoriseSecurityGroup(sg, port, ip):
     os.system("aws ec2 authorize-security-group-ingress --group-id {} --protocol tcp --port {} --cidr {}",format(sg,port, ip))
 
 
-def runFile(instance_id, document_name, difficulty, instance_number, VMS, logging):
+def runFile(instance_id, document_name, difficulty, time_limit, instance_number, VMS, logging):
 
     client.send_command(
         InstanceIds=[
@@ -233,7 +233,7 @@ def runFile(instance_id, document_name, difficulty, instance_number, VMS, loggin
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                'python /home/ec2-user/brute_find_nonce.py {} {} {} {}'.format(instance_number, difficulty, VMS, logging)
+                'python /home/ec2-user/brute_find_nonce.py {} {} {} {} {}'.format(instance_number, time_limit, difficulty, VMS, logging)
             ]
         }
     )
@@ -296,7 +296,7 @@ def checkResults(totalVMS):
                     terminatedVMS+=1
                     if (terminatedVMS == totalVMS): 
                         ec2Finished = True #if this is the last VM, exit the loop
-                        checkEnding(totalVMS)
+                        emergencyStop(1,1)
                     terminateVM(instance) #Terminate the VM
                     break
         time.sleep(5) #checking every 5 seconds to not exceed API call limit
@@ -412,11 +412,12 @@ if (__name__ == "__main__"):
             VMS = args.vms
 
     VMS = int(VMS)
+
     print(max_time, time_limit, difficulty, confidence, VMS, logging)
 
     terminateInstances()
     runInstances(VMS)
-    waitAndSend(difficulty, VMS, logging)
+    waitAndSend(difficulty, VMS, time_limit, logging)
     print("Instances queued.")
     checkResults(VMS)
     
