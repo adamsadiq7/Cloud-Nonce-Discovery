@@ -4,8 +4,11 @@ import os
 import json
 import time
 import sys
+import math
 import signal
 import argparse
+import csv
+
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 ec2 = boto3.client('ec2')
 ec2_resource = boto3.resource('ec2')
@@ -35,8 +38,8 @@ parser.add_argument(
 parser.add_argument(
     "--time-limit",
     default=1,
-    type=int,
-    help="Maximum time blockchain will run for",
+    type=float,
+    help="Maximum time blockchain will run for in ms",
 )
 
 parser.add_argument(
@@ -46,29 +49,27 @@ parser.add_argument(
     help="Number of virtual machines to spawn",
 )
 
+parser.add_argument(
+    "--confidence",
+    default=1,
+    type=float,
+    help="Confidence value",
+)
+
 directory = "Documents/University/4th/Cloud\ Computing"
 # ------------------------------------------------------------- CONFIG ------------------------------------------------------------- #
 
 # ------------------------------------------------------------ FUNCTIONS ----------------------------------------------------------- #
 def sendFile(dns):
-    os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
     os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/brute_find_nonce.py ec2-user@{}:~".format(directory, directory, dns))
-    # os.system("scp -i ~/{}/MyFirstKey.pem -o 'StrictHostKeyChecking no' ~/{}/test.py ec2-user@{}:~".format(directory, directory, dns))
-    # os.system("yes")
-    print("sent.")
-        # os.system("scp -i MyFirstKey.pem find_nonce.py ubuntu@ec2-{}.compute-1.amazonaws.com:~/data/".format(ip))
     
-    # This is working fam.
-        # os.system("scp -i ~/Documents/University/4th/Cloud\ Computing/MyFirstKey.pem ~/Documents/University/4th/Cloud\ Computing/find_nonce.py ec2-user@ec2-3-10-169-78.eu-west-2.compute.amazonaws.com:/home/ec2-user")
-
 def runInstances(i):
     os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --iam-instance-profile Name={} --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" > stop-output.json'.format(iam_role_name, i))
-    # os.system('aws ec2 run-instances --image-id ami-04de2b60dd25fbb2e --count {} --instance-type t2.micro --key-name MyFirstKey --security-groups "MyFirstSecurityGroup" --user-data://job.sh > output_run.json'.format(i))
 
 def queryInstances():
     os.system("aws ec2 describe-instances --output json > instances-raw.json")
 
-def waitAndSend(time_limit, difficulty, VMS, logging):
+def waitAndSend(difficulty, VMS, logging):
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     f = open("instances.json","r")
     instances = json.load(f)
@@ -86,7 +87,7 @@ def waitAndSend(time_limit, difficulty, VMS, logging):
                 wait(instance, 'eu-west-2') #wait until instance is running
                 sendFile(dns) #this takes dns
                 print("Files Sent.")
-                runFile(instance, "AWS-RunShellScript", time_limit, difficulty, iterator, VMS, logging)
+                runFile(instance, "AWS-RunShellScript", difficulty, iterator, VMS, logging)
                 iterator +=1
 
 def endInstances():
@@ -166,6 +167,11 @@ def emergencyStop(signum, frame):
     terminateInstances()
     exit()
 
+def terminateVM(instance_id):
+    ec2.terminate_instances(InstanceIds=[instance_id], DryRun=False)
+    updateInstances()
+    print("Instance {} terminated.".format(instance_id))
+
 def terminateInstances():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress]' --output json > instances.json")
     #loop through and terminate all instances
@@ -218,21 +224,7 @@ def authoriseSecurityGroup(sg, port, ip):
     os.system("aws ec2 authorize-security-group-ingress --group-id {} --protocol tcp --port {} --cidr {}",format(sg,port, ip))
 
 
-def runFile(instance_id, document_name, time_limit, difficulty, instance_number, VMS, logging):
-    # os.system('aws ssm send-command --instance-ids {} --document-name {} --comment "IP config" --parameters commands=ifconfig --output text'.format(instance_id, document_name))
-    # os.system('sh_command_id=$(aws ssm send-command --instance-ids {} --document-name {} --comment "Demo run shell script on Linux Instance" --parameters commands=ls --output text --query "Command.CommandId"'.format(instance_id, document_name))
-
-    # first = "aws ssm send-command --instance-ids {} --document-name AWS-RunShellScript --comment"
-    # save this one lad
-    # os.system('aws ssm send-command --instance-ids {} --output text --query \'Command.CommandId\' > adam.txt'.format(instance_id))
-
-    instructionsPerS = 187248
-    ec2_range = instructionsPerS * time_limit
-
-    start = (2**32 / VMS) * instance_number
-    end = (2**32 / VMS) * (instance_number + 1)
-
-    print("Running instance {} with start {}, end {}, diff {}, time {}".format(instance_id, start, end, difficulty, time_limit))
+def runFile(instance_id, document_name, difficulty, instance_number, VMS, logging):
 
     client.send_command(
         InstanceIds=[
@@ -243,7 +235,7 @@ def runFile(instance_id, document_name, time_limit, difficulty, instance_number,
         Comment='Try and Run find_nonce.py',
         Parameters={
             'commands': [
-                'python /home/ec2-user/brute_find_nonce.py {} {} {} {} {}'.format(instance_number, difficulty, time_limit, VMS, logging)
+                'python /home/ec2-user/brute_find_nonce.py {} {} {} {}'.format(instance_number, difficulty, VMS, logging)
             ]
         }
     )
@@ -256,7 +248,7 @@ def checkResults(totalVMS):
     print("Waiting for results...")
 
     ec2Finished = False
-
+    checkingFastest = False
     terminatedVMS = 0
     while not ec2Finished:
         instances = ec2_resource.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
@@ -270,7 +262,7 @@ def checkResults(totalVMS):
             commandInvocations = response_r["CommandInvocations"]
             
             if (commandInvocations):
-                print(commandInvocations[0]["Status"])
+                # print(commandInvocations[0]["Status"])
                 output = response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]
                 resp = commandInvocations[0]["Status"]
                 if (resp == "Success"):
@@ -278,17 +270,18 @@ def checkResults(totalVMS):
                     #if one VM has finished and found none, terminate and continue others
                     if (output[:14] == "No nonce found" and (terminatedVMS <= totalVMS)):
                         print("VM {} did not find a nonce".format(instance))
+                        terminateVM(instance) #Terminate the VM
                         terminatedVMS+=1
                         if (terminatedVMS == totalVMS):
                             ec2Finished = True
                             checkEnding(totalVMS)
                     #we found a nonce
                     elif(output[:11] == "Nonce found"):
+                        terminateInstances()
                         terminatedVMS = totalVMS
                         ec2Finished = True
                         checkEnding(totalVMS)
-                        print("Instance {} found nonce first".format(instance))
-                        print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]) #Output
+                        print(response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"])
                         break
                 # If the command failed
                 elif(resp == "Failed"):
@@ -298,6 +291,7 @@ def checkResults(totalVMS):
                     if (terminatedVMS == totalVMS): 
                         ec2Finished = True #if this is the last VM, exit the loop
                         checkEnding(totalVMS)
+                    terminateVM(instance) #Terminate the VM
                     break
                 elif (resp == "TimedOut"):
                     print(output)
@@ -305,15 +299,36 @@ def checkResults(totalVMS):
                     if (terminatedVMS == totalVMS): 
                         ec2Finished = True #if this is the last VM, exit the loop
                         checkEnding(totalVMS)
+                    terminateVM(instance) #Terminate the VM
                     break
         time.sleep(5) #checking every 5 seconds to not exceed API call limit
+
+    if(checkingFastest):
+        instances = ec2_resource.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
+
+        for instance in instances:
+            
+            acknowledged = False
+            
+            while (not acknowledged):
+
+                response_r = client.list_command_invocations(
+                    InstanceId=instance.id,
+                    Details=True
+                )
+
+                commandInvocations = response_r["CommandInvocations"]
+                
+                if (commandInvocations):
+                    output = response_r["CommandInvocations"][0]["CommandPlugins"][0]["Output"]
+                    print(output)
+                    acknowledged = True
 
 
 def updateInstances():
     os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
     # instances = ec2_resource.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
     
-
     # print(instances)
 
     # os.system("aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State,Name,LaunchTime,PublicIpAddress,PublicDnsName]' --output json > instances.json")
@@ -356,14 +371,51 @@ if (__name__ == "__main__"):
         time_limit = args.time_limit * 60
     if (args.difficulty):
         difficulty = args.difficulty
-    print(time_limit, difficulty, VMS)
+    if (args.confidence):
+        confidence = args.confidence
 
     signal.signal(signal.SIGINT, emergencyStop)
 
+    y_intercept = -8.5
+
+    exp_time = 2**(difficulty + y_intercept)
+
+    lambdaa = -math.log(1 - confidence)
+
+    max_time = lambdaa * exp_time #run time to guarantee confidence interval
+
+    index = 1
+    foundVM = False
+
+    with open('times.csv', 'r') as csv_file:
+        csv_reader = csv.reader(csv_file)
+        for row in csv_reader:
+            if (not("difficulty" == row[0])):
+                if (int(row[0]) == difficulty):
+                    for item in row:
+                        if (item[-2:] == "ms"):
+                            rec_time = int(item[:len(item)-2])
+                            if (max_time >= rec_time):
+                                foundVM = True
+                                VMS = index
+                                break
+                            else:
+                                if(index == 1):
+                                    index = 0
+                                    index += 2
+
+    if (foundVM == False):
+        VMS = 15
+
+    # if (args.vms):
+    #     VMS = args.vms
+
+    print(time_limit, difficulty, confidence, VMS, logging)
+
     terminateInstances()
     runInstances(VMS)
+    waitAndSend(difficulty, VMS, logging)
     print("Instances queued.")
-    waitAndSend(time_limit, difficulty, VMS, logging)
     checkResults(VMS)
     
 # ------------------------------------------------------------- COMMANDS ------------------------------------------------------------- #

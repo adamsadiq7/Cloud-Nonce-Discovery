@@ -11,14 +11,16 @@ scale = 16  # equals to hexadecimal
 num_of_bits = 256  # number of bits to output from hex
 # -------------------------------------------------------- GLOBAL VARIABLES -------------------------------------------------------- #
 
-def find_nonce(difficulty, time_limit, instance_number, VMS, log):
+def find_nonce(difficulty, instance_number, VMS, log):
 
-    start = (2**32 / VMS) * instance_number
-    end = (2**32 / VMS) * (instance_number + 1)
+    i = instance_number
 
-    for i in xrange(start, end):
+    finished = False
+
+    while(not finished):
         if (log == True):
             logging.debug(str(i))
+        
         proof = "{0:b}".format(i)
         block = challenger_string + proof
         result = hashlib.sha256(block.encode('utf-8')).hexdigest()
@@ -29,15 +31,18 @@ def find_nonce(difficulty, time_limit, instance_number, VMS, log):
             print("Nonce found:")
             print(block)
             return (block)
+        if (i >= 2**32):
+            break
+        i+=VMS
 
 if (__name__ == "__main__"):
     instance_number = int(sys.argv[1])
     difficulty = int(sys.argv[2])
-    time_limit = int(sys.argv[3])
-    VMS = int(sys.argv[4])
-    log = bool(sys.argv[5])
+    VMS = float(sys.argv[3])
+    VMS = int(VMS)
+    log = bool(sys.argv[4])
     start = time.time()  # countdown
-    result = find_nonce(difficulty, time_limit, instance_number, VMS, log)
+    result = find_nonce(difficulty, instance_number, VMS, log)
     time = str(time.time() - start) + "s"
     if (result == None):
         print("No nonce found")

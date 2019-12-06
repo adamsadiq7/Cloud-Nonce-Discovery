@@ -1,0 +1,26 @@
+difficulty,1 VM,2 VM,4 VM,6 VM,8 VM,10 VM,12 VM
+1,0ms,0ms,0ms,0ms,0ms,0ms,0ms
+2,0ms,0ms,0ms,0ms,0ms,0ms,0ms
+3,0ms,0ms,0ms,0ms,0ms,0ms,0ms
+4,0ms,0ms,0ms,0ms,0ms,0ms,0ms
+5,0ms,0ms,1ms,0ms,0ms,0ms,0ms
+6,0ms,1ms,0ms,0ms,0ms,0ms,0ms
+7,1ms,1ms,0ms,0ms,1ms,1ms,1ms
+8,1ms,1ms,1ms,0ms,1ms,1ms,1ms
+9,1ms,2ms,0ms,1ms,1ms,1ms,1ms
+10,8ms,41ms,2ms,1ms,1ms,1ms,1ms
+11,8ms,43ms,2ms,8ms,1ms,1ms,7ms
+12,62ms,67ms,16ms,49ms,8ms,7ms,12ms
+13,137ms,68ms,34ms,47ms,17ms,27ms,12ms
+14,132ms,66ms,34ms,48ms,18ms,15ms,12ms
+15,251ms,172ms,63ms,47ms,33ms,26ms,26ms
+16,274ms,1397ms,74ms,47ms,36ms,31ms,24ms
+17,289ms,2598ms,68ms,47ms,36ms,30ms,27ms
+18,281ms,2772ms,77ms,48ms,38ms,28ms,24ms
+19,3359ms,3228ms,1316ms,905ms,665ms,535ms,628ms
+20,3442ms,2673ms,1304ms,929ms,680ms,531ms,1408ms
+21,4848ms,2663ms,1332ms,939ms,725ms,536ms,456ms
+22,17340ms,8478ms,4185ms,2873ms,2302ms,1645ms,1506ms
+23,16625ms,8339ms,4071ms,2891ms,2110ms,1744ms,1404ms
+24,61896ms,31164ms,15181ms,10040ms,7729ms,6933ms,5081ms
+25,129932ms,66420ms,39462ms,36042ms,16237ms,13305ms,116653ms
