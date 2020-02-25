@@ -29,6 +29,7 @@ def find_nonce(difficulty, instance_number, totalInstances):
         proof = "{0:b}".format(i)
         block = proof + challenger_string
         result = hashlib.sha256(block.encode('utf-8')).hexdigest()
+        result = hashlib.sha256(result.encode('utf-8')).hexdigest()
         result_binary = bin(int(result, scale))[2:].zfill(num_of_bits)
 
         if (result_binary[:difficulty] == '0' * difficulty):
